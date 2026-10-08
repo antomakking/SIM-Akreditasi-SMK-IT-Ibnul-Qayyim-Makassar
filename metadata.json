@@ -1,0 +1,6 @@
+{
+  "name": "SIM Akreditasi SMK IT Ibnul Qayyim Makassar",
+  "description": "Sistem Informasi Manajemen Akreditasi BAN-PDM SMK/MAK 2024 (Versi 2025) berbasis Supabase PostgreSQL untuk Asesi SMK IT Ibnul Qayyim Makassar",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
