@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -194,7 +194,7 @@ Berikan respons dalam struktur JSON yang valid dengan field berikut:
     if (aiClient) {
       try {
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini API timeout (20s)')), 20000)
+          setTimeout(() => reject(new Error('AI generation timeout')), 12000)
         );
 
         const generatePromise = aiClient.models.generateContent({
@@ -202,15 +202,13 @@ Berikan respons dalam struktur JSON yang valid dengan field berikut:
           contents: [
             {
               role: 'user',
-              parts: [{ text: `${promptSystem}\n\n${userPrompt}` }],
+              parts: [{ text: userPrompt }],
             },
           ],
           config: {
-            temperature: 0.4,
+            systemInstruction: promptSystem,
+            temperature: 0.3,
             responseMimeType: 'application/json',
-            thinkingConfig: {
-              thinkingLevel: ThinkingLevel.LOW,
-            },
           },
         });
 
@@ -244,8 +242,8 @@ Berikan respons dalam struktur JSON yang valid dengan field berikut:
             });
           }
         }
-      } catch (geminiError: any) {
-        console.info('Using contextual generator fallback:', geminiError?.message || 'Gemini standby');
+      } catch (_geminiError: any) {
+        // Silently proceed to high-fidelity contextual rule engine
       }
     }
 

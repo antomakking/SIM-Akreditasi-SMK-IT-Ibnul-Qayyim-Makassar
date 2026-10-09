@@ -1,9 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Komponen, EvaluasiAsesi, CapaianRubrik, StatusVerifikasi, StatusBuktiFisik, UserRole, UserProfile, Indikator, BuktiFisik } from '../types/akreditasi';
+import { 
+  Komponen, 
+  EvaluasiAsesi, 
+  CapaianRubrik, 
+  StatusVerifikasi, 
+  StatusBuktiFisik, 
+  UserRole, 
+  UserProfile, 
+  Indikator, 
+  BuktiFisik,
+  ReviewerNote
+} from '../types/akreditasi';
 import { 
   saveEvaluasi, 
   saveValidatorReview,
   validateEvaluasiInput, 
+  validateBuktiDukungUntukSelesai,
   getCurrentUser, 
   setCurrentUser, 
   DEFAULT_TEAM_USERS, 
@@ -12,11 +24,16 @@ import {
 import { ActivityLogTimeline } from './ActivityLogTimeline';
 import { AsistenPintarModal } from './AsistenPintarModal';
 import { RiwayatVersiBuktiModal } from './RiwayatVersiBuktiModal';
+import { ReviewerNotesPanel } from './ReviewerNotesPanel';
+import { InstrumenPrintPreviewModal } from './InstrumenPrintPreviewModal';
+import { getStoredReviewerNotes } from '../services/reviewerNotesService';
 import { RUBRIK_THEMES, getRubrikThemeByLevel, getRubrikThemeByKategori } from '../utils/rubrikTheme';
 import { getVersionsForBukti, recordBuktiVersion } from '../services/versionHistoryService';
+import { evaluateIndikatorDeadline } from '../services/deadlineService';
 import { 
   Check, 
   AlertCircle, 
+  AlertTriangle,
   ExternalLink, 
   Plus, 
   Trash2, 
@@ -51,13 +68,16 @@ import {
   Eye,
   Lock,
   MessageSquare,
-  Compass
+  Compass,
+  Printer
 } from 'lucide-react';
 
 interface InstrumenEvaluasiProps {
   komponenList: Komponen[];
   selectedKomponenId: string;
   setSelectedKomponenId: (id: string) => void;
+  targetIndikatorId?: string | null;
+  setTargetIndikatorId?: (id: string | null) => void;
   evaluasiMap: Record<string, EvaluasiAsesi>;
   onEvaluasiUpdated: (item: EvaluasiAsesi) => void;
   isFocusMode?: boolean;
@@ -79,6 +99,8 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
   komponenList,
   selectedKomponenId,
   setSelectedKomponenId,
+  targetIndikatorId,
+  setTargetIndikatorId,
   evaluasiMap,
   onEvaluasiUpdated,
   isFocusMode = false,
@@ -89,7 +111,29 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
 }) => {
   const [selectedButirId, setSelectedButirId] = useState<string>('all');
   const [selectedIndikatorId, setSelectedIndikatorId] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'belum_evaluasi' | 'sudah_evaluasi' | 'valid' | 'draf' | 'perlu_perbaikan'>('all');
+
+  // Auto-focus & scroll ke target indikator jika dipicu dari dashboard alert
+  useEffect(() => {
+    if (targetIndikatorId) {
+      setSelectedIndikatorId(targetIndikatorId);
+      const activeKomponen = komponenList.find(k => k.id === selectedKomponenId);
+      const parentButir = activeKomponen?.butir?.find(b => b.indikator?.some(ind => ind.id === targetIndikatorId));
+      if (parentButir) {
+        setSelectedButirId(parentButir.id);
+      }
+      setTimeout(() => {
+        const el = document.getElementById(`indikator-card-${targetIndikatorId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-2', 'ring-amber-500');
+          setTimeout(() => {
+            el.classList.remove('ring-2', 'ring-amber-500');
+          }, 3500);
+        }
+      }, 200);
+    }
+  }, [targetIndikatorId, selectedKomponenId, komponenList]);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'belum_evaluasi' | 'sudah_evaluasi' | 'valid' | 'draf' | 'selesai' | 'perlu_perbaikan'>('all');
   const [capaianFilter, setCapaianFilter] = useState<'all' | CapaianRubrik>('all');
   const [buktiFilter, setBuktiFilter] = useState<'all' | 'lengkap' | 'belum_lengkap'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -98,6 +142,33 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
   const [openLogIndikatorId, setOpenLogIndikatorId] = useState<string | null>(null);
   const [openButirLogId, setOpenButirLogId] = useState<string | null>(null);
   const [isSidebarOpenInFocus, setIsSidebarOpenInFocus] = useState<boolean>(true);
+
+  // Reviewer Notes Side Panel State
+  const [isReviewerPanelOpen, setIsReviewerPanelOpen] = useState<boolean>(false);
+  const [isReviewerPanelPinned, setIsReviewerPanelPinned] = useState<boolean>(false);
+  const [reviewerNotes, setReviewerNotes] = useState<ReviewerNote[]>(() => getStoredReviewerNotes());
+
+  // Print Preview Modal State
+  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState<boolean>(false);
+
+  const handleSelectIndikatorFromNotes = (indikatorId: string) => {
+    setSelectedIndikatorId(indikatorId);
+    const activeKomponen = komponenList.find((k) => k.id === selectedKomponenId);
+    const parentButir = activeKomponen?.butir?.find((b) => b.indikator?.some((ind) => ind.id === indikatorId));
+    if (parentButir) {
+      setSelectedButirId(parentButir.id);
+    }
+    setTimeout(() => {
+      const el = document.getElementById(`indikator-card-${indikatorId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-indigo-500');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-indigo-500');
+        }, 3500);
+      }
+    }, 200);
+  };
 
   // Auto-Save System State
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState<boolean>(true);
@@ -325,6 +396,28 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
   };
 
   const handleStatusVerifikasiChange = (indikatorId: string, status_verifikasi: StatusVerifikasi, indikatorKode?: string) => {
+    // Validasi data bukti dukung sebelum status diubah menjadi 'Selesai'
+    if (status_verifikasi === 'Selesai') {
+      const activeInd = currentKomponen?.butir?.flatMap((b) => b.indikator || []).find((i) => i.id === indikatorId);
+      if (activeInd) {
+        const form = getFormState(indikatorId);
+        const valRes = validateBuktiDukungUntukSelesai(activeInd, form);
+        if (!valRes.isValid) {
+          setFeedbackMessage({
+            id: indikatorId,
+            type: 'error',
+            text: `Perhatian: Bukti dukung belum memenuhi syarat 'Selesai'. ${valRes.errors[0]}`
+          });
+        } else {
+          setFeedbackMessage({
+            id: indikatorId,
+            type: 'success',
+            text: `Status 'Selesai' berhasil ditetapkan. Seluruh ${valRes.totalBuktiWajib} bukti fisik wajib & repositori digital telah valid.`
+          });
+        }
+      }
+    }
+
     updateFormState(indikatorId, { status_verifikasi });
     if (canEditAsesiNotes) {
       scheduleAutoSave(indikatorId, { status_verifikasi }, indikatorKode);
@@ -610,6 +703,30 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                 </span>
               </div>
 
+              {/* Tombol Tour Panduan di Mode Fokus */}
+              {onStartTour && (
+                <button
+                  type="button"
+                  onClick={onStartTour}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold rounded-lg transition-all shadow-xs border border-slate-700 cursor-pointer group"
+                  title="Mulai Panduan Tour Interaktif Pengisian Instrumen"
+                >
+                  <Compass className="w-3.5 h-3.5 text-emerald-400 group-hover:rotate-45 transition-transform" />
+                  <span>Panduan Tour</span>
+                </button>
+              )}
+
+              {/* Tombol Print Preview di Mode Fokus */}
+              <button
+                type="button"
+                onClick={() => setIsPrintPreviewOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg transition-all shadow-xs border border-slate-700 cursor-pointer"
+                title="Pratinjau Cetak Formal (Print Preview Dokumen)"
+              >
+                <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Print Preview</span>
+              </button>
+
               {/* Exit Focus Mode button */}
               <button
                 type="button"
@@ -765,6 +882,7 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
             {onStartTour && (
               <button
                 type="button"
+                id="instrumen-tour-btn"
                 onClick={onStartTour}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-all shadow-xs cursor-pointer group"
                 title="Panduan Interaktif Pengisian Instrumen & Bukti Fisik"
@@ -773,6 +891,39 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                 <span>Panduan Tour</span>
               </button>
             )}
+
+            {/* Tombol Print Preview Dokumen Formal */}
+            <button
+              type="button"
+              id="instrumen-print-preview-btn"
+              onClick={() => setIsPrintPreviewOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition-all shadow-xs cursor-pointer group"
+              title="Pratinjau Cetak Formal (Print Preview) Laporan Evaluasi Diri BAN-PDM"
+            >
+              <Printer className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span>Print Preview Formal</span>
+            </button>
+
+            {/* Tombol Panel Catatan Reviewer & Kolaborasi */}
+            <button
+              type="button"
+              id="instrumen-reviewer-notes-btn"
+              onClick={() => setIsReviewerPanelOpen(!isReviewerPanelOpen)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all shadow-xs cursor-pointer ${
+                isReviewerPanelOpen
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+              }`}
+              title="Buka panel kolaborasi tim asesi, catatan untuk admin & audit reviewer"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-amber-700" />
+              <span>Catatan Reviewer</span>
+              {reviewerNotes.filter((n) => n.komponen_id === selectedKomponenId && n.status !== 'selesai').length > 0 && (
+                <span className="bg-amber-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                  {reviewerNotes.filter((n) => n.komponen_id === selectedKomponenId && n.status !== 'selesai').length}
+                </span>
+              )}
+            </button>
 
             {/* Dynamic Status Feedback */}
             {!canEditAsesiNotes ? (
@@ -857,8 +1008,11 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
         </div>
       </div>
 
-      {/* Bar Filter Butir, Indikator & Pencarian */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+      {/* Container Evaluasi & Side Panel Catatan Reviewer */}
+      <div className="flex flex-col lg:flex-row items-start gap-6 relative">
+        <div className="flex-1 min-w-0 w-full space-y-6">
+          {/* Bar Filter Butir, Indikator & Pencarian */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
         {/* Baris 1: Filter Butir & Pencarian */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
@@ -946,6 +1100,7 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
               <option value="all">Semua Status Evaluasi</option>
               <option value="belum_evaluasi">⏳ Belum Dievaluasi</option>
               <option value="sudah_evaluasi">✓ Sudah Terevaluasi</option>
+              <option value="selesai">✅ Selesai (Dokumen Lengkap)</option>
               <option value="valid">🟢 Terverifikasi Valid</option>
               <option value="draf">📝 Draf (Belum Final)</option>
               <option value="perlu_perbaikan">⚠️ Perlu Perbaikan</option>
@@ -1067,6 +1222,7 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
           if (statusFilter === 'sudah_evaluasi' && !savedEval) return false;
           if (statusFilter === 'valid' && savedEval?.status_verifikasi !== 'Terverifikasi Valid') return false;
           if (statusFilter === 'draf' && savedEval?.status_verifikasi !== 'Draf') return false;
+          if (statusFilter === 'selesai' && savedEval?.status_verifikasi !== 'Selesai' && form.status_verifikasi !== 'Selesai') return false;
           if (statusFilter === 'perlu_perbaikan' && savedEval?.status_verifikasi !== 'Perlu Perbaikan') return false;
           if (capaianFilter !== 'all') {
             const currentCapaian = form.capaian || savedEval?.capaian;
@@ -1142,6 +1298,7 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
             if (statusFilter === 'sudah_evaluasi' && !savedEval) return false;
             if (statusFilter === 'valid' && savedEval?.status_verifikasi !== 'Terverifikasi Valid') return false;
             if (statusFilter === 'draf' && savedEval?.status_verifikasi !== 'Draf') return false;
+            if (statusFilter === 'selesai' && savedEval?.status_verifikasi !== 'Selesai' && form.status_verifikasi !== 'Selesai') return false;
             if (statusFilter === 'perlu_perbaikan' && savedEval?.status_verifikasi !== 'Perlu Perbaikan') return false;
 
             // 4. Filter Capaian Rubrik
@@ -1311,8 +1468,16 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                     else belumAdaCount++;
                   });
 
+                  const deadlineInfo = currentKomponen 
+                    ? evaluateIndikatorDeadline(ind, currentKomponen, butir.kode, savedEval)
+                    : null;
+
+                  const buktiValidation = validateBuktiDukungUntukSelesai(ind, form);
+                  const indNotes = reviewerNotes.filter((n) => n.indikator_id === ind.id);
+                  const indUnresolvedNotes = indNotes.filter((n) => n.status !== 'selesai');
+
                   return (
-                    <div key={ind.id} className="instrumen-card-indicator p-6 space-y-6">
+                    <div key={ind.id} id={`indikator-card-${ind.id}`} className="instrumen-card-indicator p-6 space-y-6 transition-all rounded-xl">
                       {/* Informasi Indikator */}
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1325,7 +1490,52 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                             </h4>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Tombol Cepat Catatan Reviewer per Indikator */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedIndikatorId(ind.id);
+                                setIsReviewerPanelOpen(true);
+                              }}
+                              className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                                indUnresolvedNotes.length > 0
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                              }`}
+                              title="Buka panel catatan reviewer & kolaborasi tim untuk indikator ini"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Catatan Reviewer</span>
+                              {indNotes.length > 0 && (
+                                <span className="bg-amber-500 text-slate-950 font-bold px-1.5 py-0.2 rounded-full text-[10px]">
+                                  {indNotes.length}
+                                </span>
+                              )}
+                            </button>
+
+                            {deadlineInfo?.isUrgent && (
+                              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-md border font-mono ${deadlineInfo.badgeStyle.bg} ${deadlineInfo.badgeStyle.text} ${deadlineInfo.badgeStyle.border}`}>
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span>Jatuh Tempo: {deadlineInfo.urgencyLabel} ({deadlineInfo.formattedDate})</span>
+                              </span>
+                            )}
+
+                            {form.status_verifikasi === 'Selesai' && (
+                              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
+                                buktiValidation.isValid 
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                                  : 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
+                              }`}>
+                                {buktiValidation.isValid ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                )}
+                                <span>Selesai {buktiValidation.isValid ? '(Valid)' : '(Bukti Kurang)'}</span>
+                              </span>
+                            )}
+
                             {isSaved ? (
                               <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border ${getRubrikThemeByKategori(savedEval.capaian).pillFull}`}>
                                 <span className={`w-2 h-2 rounded-full ${getRubrikThemeByKategori(savedEval.capaian).dotColor}`} />
@@ -1750,7 +1960,7 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                       </div>
 
                       {/* Catatan Evaluasi Diri Asesi & Status Verifikasi */}
-                      <div className="space-y-3">
+                      <div className="evaluasi-catatan-section space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                             <span>Catatan Evaluasi Diri SMK IT Ibnul Qayyim Makassar:</span>
@@ -1891,6 +2101,67 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                         </div>
                       ) : null}
 
+                      {/* Peringatan Visual Validasi Bukti Dukung Sebelum Status Selesai */}
+                      {form.status_verifikasi === 'Selesai' && !buktiValidation.isValid ? (
+                        <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl space-y-2 text-xs">
+                          <div className="flex items-start gap-2.5">
+                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                            <div className="space-y-1.5 flex-1">
+                              <div className="flex flex-wrap items-center justify-between gap-1">
+                                <p className="font-bold text-rose-900 text-xs">
+                                  ⚠️ Peringatan Validasi: Bukti Dukung Belum Memenuhi Syarat Status 'Selesai'
+                                </p>
+                                <span className="text-[10px] font-bold bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full">
+                                  {buktiValidation.tersediaBuktiWajib}/{buktiValidation.totalBuktiWajib} Bukti Wajib Tersedia
+                                </span>
+                              </div>
+                              <p className="text-rose-700 text-[11px] leading-relaxed">
+                                Status indikator ini diatur ke <strong>Selesai</strong>, namun sistem mendeteksi kekurangan bukti fisik atau uraian evaluasi diri yang diwajibkan oleh BAN-PDM:
+                              </p>
+                              <ul className="list-disc list-inside text-[11px] text-rose-800 space-y-1 bg-white/70 p-2.5 rounded-lg border border-rose-200 font-medium">
+                                {buktiValidation.errors.map((err, i) => (
+                                  <li key={i}>{err}</li>
+                                ))}
+                              </ul>
+                              {buktiValidation.missingMandatoryBukti.length > 0 && (
+                                <p className="text-[10px] text-rose-700 font-semibold pt-0.5">
+                                  Dokumen wajib yang belum Tersedia: {buktiValidation.missingMandatoryBukti.map((m) => `${m.kode} - ${m.nama}`).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : form.status_verifikasi === 'Selesai' && buktiValidation.isValid ? (
+                        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between gap-2 text-xs text-emerald-900">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div>
+                              <p className="font-bold text-emerald-950">Status Selesai: Bukti Dukung Sah &amp; Lengkap</p>
+                              <p className="text-[11px] text-emerald-700">
+                                Seluruh {buktiValidation.totalBuktiWajib} bukti wajib berstatus Tersedia dan tautan repositori digital telah terverifikasi.
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-md border border-emerald-200 shrink-0">
+                            Cakupan Bukti: {buktiValidation.checklistCoveragePercent}%
+                          </span>
+                        </div>
+                      ) : !buktiValidation.isValid ? (
+                        <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2 text-[11px] text-slate-600">
+                          <span className="flex items-center gap-1.5">
+                            <Info className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Kesiapan Status Selesai: {buktiValidation.tersediaBuktiWajib}/{buktiValidation.totalBuktiWajib} bukti wajib tersedia · {buktiValidation.hasValidBuktiUrl ? '✓ Link cloud ada' : 'Tautan cloud belum ada'} · {buktiValidation.catatanValid ? '✓ Catatan cukup' : 'Catatan < 20 karakter'}</span>
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="px-3 py-1.5 bg-emerald-50/50 border border-emerald-200/60 rounded-lg flex items-center justify-between gap-2 text-[11px] text-emerald-700">
+                          <span className="flex items-center gap-1.5 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Bukti dukung lengkap &amp; valid. Indikator ini siap diubah ke status 'Selesai'.</span>
+                          </span>
+                        </div>
+                      )}
+
                       {/* Baris Status Bar Visual & Tombol Aksi Simpan untuk Asesi/Admin */}
                       {canEditAsesiNotes && (
                         <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100">
@@ -1904,6 +2175,7 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
                               <option value="Draf">Draf (Sedang Disusun)</option>
                               <option value="Belum Diunggah">Belum Diunggah</option>
                               <option value="Perlu Perbaikan">Perlu Perbaikan</option>
+                              <option value="Selesai">✅ Selesai (Pengisian &amp; Bukti Lengkap)</option>
                               {isAdmin && <option value="Terverifikasi Valid">Terverifikasi Valid (Admin)</option>}
                             </select>
                           </div>
@@ -2028,6 +2300,46 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
           );
         })}
       </div>
+    </div>
+
+    {/* Panel Catatan Reviewer & Kolaborasi Tim */}
+    <ReviewerNotesPanel
+      isOpen={isReviewerPanelOpen}
+      onClose={() => setIsReviewerPanelOpen(false)}
+      isPinned={isReviewerPanelPinned}
+      onTogglePin={() => setIsReviewerPanelPinned(!isReviewerPanelPinned)}
+      notes={reviewerNotes}
+      onNotesChange={setReviewerNotes}
+      currentUser={currentUser}
+      komponenList={komponenList}
+      selectedKomponenId={selectedKomponenId}
+      activeIndikatorId={selectedIndikatorId !== 'all' ? selectedIndikatorId : null}
+      onSelectIndikator={handleSelectIndikatorFromNotes}
+    />
+  </div>
+
+  {/* Floating Button Akses Cepat Catatan Reviewer saat Panel Tertutup */}
+  {!isReviewerPanelOpen && (
+    <button
+      type="button"
+      onClick={() => setIsReviewerPanelOpen(true)}
+      title="Buka Panel Catatan Reviewer & Kolaborasi"
+      className="fixed right-5 bottom-6 z-40 inline-flex items-center gap-2.5 px-4 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-full shadow-2xl border border-slate-700 hover:scale-105 active:scale-95 transition-all text-xs font-bold group cursor-pointer"
+    >
+      <div className="relative">
+        <MessageSquare className="w-4 h-4 text-amber-400 group-hover:rotate-12 transition-transform" />
+        {reviewerNotes.filter((n) => n.komponen_id === selectedKomponenId && n.status !== 'selesai').length > 0 && (
+          <span className="absolute -top-1 -right-1.5 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+        )}
+      </div>
+      <span>Catatan Reviewer</span>
+      {reviewerNotes.filter((n) => n.komponen_id === selectedKomponenId && n.status !== 'selesai').length > 0 && (
+        <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black">
+          {reviewerNotes.filter((n) => n.komponen_id === selectedKomponenId && n.status !== 'selesai').length}
+        </span>
+      )}
+    </button>
+  )}
 
       {/* Modal Asisten Pintar AI */}
       {aiAssistantIndikator && (() => {
@@ -2070,6 +2382,16 @@ export const InstrumenEvaluasi: React.FC<InstrumenEvaluasiProps> = ({
         currentStatus={activeVersionStatus}
         currentUser={currentUser}
         onStatusUpdated={handleVersionStatusUpdated}
+      />
+
+      {/* Modal Pratinjau Cetak Formal (Print Preview Dokumen Formal) */}
+      <InstrumenPrintPreviewModal
+        isOpen={isPrintPreviewOpen}
+        onClose={() => setIsPrintPreviewOpen(false)}
+        komponenList={komponenList}
+        evaluasiMap={evaluasiMap}
+        currentKomponenId={selectedKomponenId}
+        currentUser={currentUser}
       />
     </div>
   );

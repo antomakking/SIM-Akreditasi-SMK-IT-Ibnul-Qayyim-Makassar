@@ -14,9 +14,11 @@ import {
   Sparkles,
   Target,
   ArrowUpRight,
-  FileCheck2
+  FileCheck2,
+  AlertTriangle
 } from 'lucide-react';
 import { RUBRIK_THEMES, getRubrikThemeByLevel } from '../utils/rubrikTheme';
+import { getAllDeadlineAlerts, getDeadlineSummaryMetrics } from '../services/deadlineService';
 
 interface ExecutiveSummaryCardProps {
   komponenList: Komponen[];
@@ -45,6 +47,12 @@ export const ExecutiveSummaryCard: React.FC<ExecutiveSummaryCardProps> = ({
 }) => {
   const [showFormulaDetails, setShowFormulaDetails] = useState(false);
   const [projectionTarget, setProjectionTarget] = useState<4 | 3>(4);
+
+  // Ambil data peringatan deadline
+  const deadlineMetrics = React.useMemo(() => {
+    const alerts = getAllDeadlineAlerts(komponenList, evaluasiMap);
+    return getDeadlineSummaryMetrics(alerts);
+  }, [komponenList, evaluasiMap]);
 
   // Kalkulasi detail per-komponen dengan pembobotan BAN-PDM resmi
   let totalBobot = 0;
@@ -196,6 +204,18 @@ export const ExecutiveSummaryCard: React.FC<ExecutiveSummaryCardProps> = ({
               <span className="text-slate-300 font-medium">Perhitungan Bobot BAN-PDM 2024</span>
               <span className="text-slate-400">·</span>
               <span className="text-slate-400 font-mono">Total Bobot: 100%</span>
+              {deadlineMetrics.urgentTotal > 0 && (
+                <>
+                  <span className="text-slate-400">·</span>
+                  <a
+                    href="#dashboard-deadline-alerts"
+                    className="inline-flex items-center gap-1 font-bold bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 border border-amber-400/30 px-2.5 py-0.5 rounded-full transition-colors"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{deadlineMetrics.urgentTotal} Mendekati Jatuh Tempo</span>
+                  </a>
+                </>
+              )}
             </div>
 
             <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white">

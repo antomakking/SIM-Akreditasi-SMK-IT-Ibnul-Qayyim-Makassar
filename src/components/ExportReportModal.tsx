@@ -7,6 +7,7 @@ interface ExportReportModalProps {
   onClose: () => void;
   komponenList: Komponen[];
   evaluasiMap: Record<string, EvaluasiAsesi>;
+  onOpenPrintPreview?: () => void;
 }
 
 export const ExportReportModal: React.FC<ExportReportModalProps> = ({
@@ -14,6 +15,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
   onClose,
   komponenList,
   evaluasiMap,
+  onOpenPrintPreview,
 }) => {
   if (!isOpen) return null;
 
@@ -147,13 +149,24 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
             </button>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
+            {onOpenPrintPreview && (
+              <button
+                type="button"
+                onClick={onOpenPrintPreview}
+                className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-emerald-400" />
+                <span>Buka Pratinjau Cetak Formal (Print Preview BAN-PDM)</span>
+              </button>
+            )}
+
             <button
               onClick={handlePrint}
-              className="w-full py-2.5 px-3 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 px-3 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
             >
               <Printer className="w-4 h-4 text-slate-500" />
-              <span>Cetak / Cetak PDF (Browser Print)</span>
+              <span>Cetak Cepat via Peramban (Quick Browser Print)</span>
             </button>
           </div>
         </div>

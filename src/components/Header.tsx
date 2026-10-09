@@ -14,20 +14,30 @@ import {
   Check,
   Menu,
   X,
-  Compass
+  Compass,
+  Bell,
+  KeyRound,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types/akreditasi';
 import { DEFAULT_TEAM_USERS } from '../services/evaluasiService';
 
+export type AppNavTab = 'dashboard' | 'instrumen' | 'sql' | 'vanilla' | 'pengaturan' | 'login';
+
 interface HeaderProps {
-  activeTab: 'dashboard' | 'instrumen' | 'sql' | 'vanilla';
-  setActiveTab: (tab: 'dashboard' | 'instrumen' | 'sql' | 'vanilla') => void;
+  activeTab: AppNavTab;
+  setActiveTab: (tab: AppNavTab) => void;
   onOpenConnect: () => void;
   onOpenExport: () => void;
   isSupabaseLive: boolean;
   currentUser: UserProfile;
+  isLoggedIn?: boolean;
   onUserChanged: (user: UserProfile) => void;
+  onLogout?: () => void;
   onStartTour?: () => void;
+  urgentDeadlineCount?: number;
+  onNavigateToAlerts?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,10 +45,14 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   onOpenConnect,
   onOpenExport,
-  isSupabaseLive,
+  isSupabaseLive = true,
   currentUser,
+  isLoggedIn = true,
   onUserChanged,
+  onLogout,
   onStartTour,
+  urgentDeadlineCount,
+  onNavigateToAlerts,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -91,7 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
   const currentBadge = getRoleBadge(currentUser.role);
 
   const navItems: {
-    id: 'dashboard' | 'instrumen' | 'sql' | 'vanilla';
+    id: AppNavTab;
     label: string;
     shortLabel: string;
     icon: React.ReactNode;
@@ -107,6 +121,12 @@ export const Header: React.FC<HeaderProps> = ({
       label: 'Instrumen Asesi',
       shortLabel: 'Instrumen',
       icon: <ClipboardCheck className="w-3.5 h-3.5 shrink-0" />,
+    },
+    {
+      id: 'pengaturan',
+      label: 'Pengaturan & Password',
+      shortLabel: 'Pengaturan',
+      icon: <Settings className="w-3.5 h-3.5 shrink-0" />,
     },
     {
       id: 'sql',
@@ -298,9 +318,68 @@ export const Header: React.FC<HeaderProps> = ({
                       <span><strong>Viewer:</strong> Mode baca saja (Read-Only).</span>
                     </div>
                   </div>
+
+                  {/* Actions in User Menu: Pengaturan & Login/Logout */}
+                  <div className="p-2 border-t border-slate-100 bg-white space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('pengaturan');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors text-left"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span>Menu Pengaturan & Sandi Akses</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('login');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors text-left"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>Halaman Login Pengguna</span>
+                    </button>
+
+                    {onLogout && isLoggedIn && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onLogout();
+                          setActiveTab('login');
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors text-left"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>Keluar (Logout)</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
+
+            {/* Notification Bell Button */}
+            {onNavigateToAlerts && (
+              <button
+                id="header-notification-bell"
+                onClick={onNavigateToAlerts}
+                className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer border border-slate-200"
+                title={urgentDeadlineCount && urgentDeadlineCount > 0 ? `${urgentDeadlineCount} Indikator Mendekati Jatuh Tempo Akreditasi` : 'Notifikasi Jatuh Tempo'}
+              >
+                <Bell className="w-4 h-4 text-slate-600" />
+                {urgentDeadlineCount !== undefined && urgentDeadlineCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white font-mono shadow-xs">
+                    {urgentDeadlineCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Supabase Connect / Status Button */}
             <button
@@ -368,6 +447,21 @@ export const Header: React.FC<HeaderProps> = ({
                         </button>
                       );
                     })}
+
+                    {onStartTour && (
+                      <div className="pt-1 mt-1 border-t border-slate-100">
+                        <button
+                          onClick={() => {
+                            onStartTour();
+                            setIsMobileNavOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-50 transition-colors"
+                        >
+                          <Compass className="w-4 h-4 text-indigo-600" />
+                          <span>Mulai Panduan Tour</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -1,4 +1,15 @@
-import { CapaianRubrik, EvaluasiAsesi, StatusVerifikasi, ValidationResult, ActivityLog, UserRole, UserProfile } from '../types/akreditasi';
+import { 
+  CapaianRubrik, 
+  EvaluasiAsesi, 
+  StatusVerifikasi, 
+  ValidationResult, 
+  ActivityLog, 
+  UserRole, 
+  UserProfile,
+  Indikator,
+  StatusBuktiFisik,
+  EvaluasiBuktiValidationResult
+} from '../types/akreditasi';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const VALID_CAPAIAN: CapaianRubrik[] = ['Kurang', 'Cukup Baik', 'Baik', 'Sangat Baik'];
@@ -225,6 +236,105 @@ export function validateEvaluasiInput(
   return {
     isValid: Object.keys(errors).length === 0,
     errors
+  };
+}
+
+/**
+ * Utilitas validasi data untuk memastikan setiap evaluasi asesi memiliki bukti dukung yang valid
+ * sebelum status diubah menjadi 'Selesai' / 'Terverifikasi Valid'.
+ */
+export function validateBuktiDukungUntukSelesai(
+  indikator: Indikator,
+  evaluasiForm: {
+    catatan?: string;
+    bukti_urls?: string[];
+    bukti_checklist?: Record<string, StatusBuktiFisik>;
+  }
+): EvaluasiBuktiValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const checklist = evaluasiForm.bukti_checklist || {};
+  const urls = evaluasiForm.bukti_urls || [];
+  const catatan = (evaluasiForm.catatan || '').trim();
+
+  // 1. Validasi Catatan Evaluasi Diri
+  const catatanValid = catatan.length >= 20;
+  if (!catatanValid) {
+    if (catatan.length === 0) {
+      errors.push('Catatan Evaluasi Diri belum diisi sama sekali (minimal 20 karakter uraian fakta & kondisi riil sekolah).');
+    } else {
+      errors.push(`Catatan Evaluasi Diri terlalu singkat (${catatan.length} karakter). Minimal 20 karakter untuk memaparkan kondisi riil.`);
+    }
+  }
+
+  // 2. Validasi Checklist Bukti Fisik Wajib
+  const buktiList = indikator.bukti_fisik || [];
+  const buktiWajibList = buktiList.filter(b => b.wajib);
+  const totalBuktiWajib = buktiWajibList.length;
+  let tersediaBuktiWajib = 0;
+  const missingMandatoryBukti: Array<{ id: string; nama: string; kode: string }> = [];
+
+  buktiWajibList.forEach(b => {
+    const status = checklist[b.id] || 'Belum Ada';
+    if (status === 'Tersedia') {
+      tersediaBuktiWajib++;
+    } else {
+      missingMandatoryBukti.push({
+        id: b.id,
+        nama: b.nama,
+        kode: b.kode
+      });
+    }
+  });
+
+  if (totalBuktiWajib > 0 && missingMandatoryBukti.length > 0) {
+    errors.push(
+      `Terdapat ${missingMandatoryBukti.length} dari ${totalBuktiWajib} bukti fisik WAJIB yang belum berstatus 'Tersedia' (${missingMandatoryBukti.map(m => m.kode).join(', ')}).`
+    );
+  }
+
+  // 3. Validasi Link / URL Bukti Fisik Digital
+  const validUrls = urls.filter(u => {
+    if (!u || u.trim().length === 0) return false;
+    try {
+      const p = new URL(u.trim());
+      return ['http:', 'https:'].includes(p.protocol);
+    } catch {
+      return false;
+    }
+  });
+  const hasValidBuktiUrl = validUrls.length > 0;
+
+  if (!hasValidBuktiUrl) {
+    errors.push('Belum ada tautan berkas bukti fisik digital (Google Drive, Cloud Storage, atau Web) yang valid.');
+  }
+
+  // Hitung persentase keterpenuhan seluruh bukti fisik
+  let totalTersedia = 0;
+  buktiList.forEach(b => {
+    if ((checklist[b.id] || 'Belum Ada') === 'Tersedia') {
+      totalTersedia++;
+    }
+  });
+  const checklistCoveragePercent = buktiList.length > 0 ? Math.round((totalTersedia / buktiList.length) * 100) : 100;
+
+  if (checklistCoveragePercent < 100 && missingMandatoryBukti.length === 0) {
+    warnings.push(`Cakupan seluruh bukti fisik berada pada ${checklistCoveragePercent}%. Masih ada dokumen pendukung opsional yang belum ditandai Tersedia.`);
+  }
+
+  const isValid = errors.length === 0;
+
+  return {
+    isValid,
+    canMarkAsSelesai: isValid,
+    errors,
+    warnings,
+    missingMandatoryBukti,
+    totalBuktiWajib,
+    tersediaBuktiWajib,
+    hasValidBuktiUrl,
+    checklistCoveragePercent,
+    catatanValid
   };
 }
 

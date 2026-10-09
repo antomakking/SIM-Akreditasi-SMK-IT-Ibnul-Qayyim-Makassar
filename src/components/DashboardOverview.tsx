@@ -19,7 +19,9 @@ import {
   TrendingUp,
   BarChart3,
   PieChart as PieChartIcon,
-  Compass
+  Compass,
+  AlertTriangle,
+  Bell
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -35,11 +37,15 @@ import { DATA_SEKOLAH_AKREDITASI } from '../data/akreditasiData';
 import { SertifikatAkreditasiModal } from './SertifikatAkreditasiModal';
 import { RUBRIK_THEMES } from '../utils/rubrikTheme';
 import { ExecutiveSummaryCard } from './ExecutiveSummaryCard';
+import { DokumenProgressPerKomponenCard } from './DokumenProgressPerKomponenCard';
+import { DeadlineNotificationSystem } from './DeadlineNotificationSystem';
+import { getAllDeadlineAlerts, getComponentUrgentCount, getDeadlineSummaryMetrics } from '../services/deadlineService';
 
 interface DashboardOverviewProps {
   komponenList: Komponen[];
   evaluasiMap: Record<string, EvaluasiAsesi>;
   onSelectKomponen: (kompId: string) => void;
+  onSelectIndikator?: (kompId: string, indId: string) => void;
   onNavigateToSql: () => void;
   onNavigateToVanilla: () => void;
   onStartTour?: () => void;
@@ -49,11 +55,21 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   komponenList,
   evaluasiMap,
   onSelectKomponen,
+  onSelectIndikator,
   onNavigateToSql,
   onNavigateToVanilla,
   onStartTour,
 }) => {
   const [isCertificateModalOpen, setIsCertificateModalOpen] = useState(false);
+
+  // Kalkulasi sistem deadline dan notifikasi peringatan jatuh tempo
+  const deadlineAlerts = React.useMemo(() => {
+    return getAllDeadlineAlerts(komponenList, evaluasiMap);
+  }, [komponenList, evaluasiMap]);
+
+  const deadlineMetrics = React.useMemo(() => {
+    return getDeadlineSummaryMetrics(deadlineAlerts);
+  }, [deadlineAlerts]);
 
   // Hitung total indikator & bukti fisik
   let totalIndikator = 0;
@@ -163,18 +179,34 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               Sistem Informasi Manajemen Evaluasi Diri Sekolah (EDS) dan Portofolio Bukti Fisik Akreditasi BAN-PDM SMK IT Ibnul Qayyim Makassar terintegrasi Supabase PostgreSQL.
             </p>
 
-            {onStartTour && (
-              <div className="pt-2 flex items-center gap-2">
+            <div className="pt-2 flex flex-wrap items-center gap-2">
+              {onStartTour && (
                 <button
                   type="button"
+                  id="dashboard-tour-btn"
                   onClick={onStartTour}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer group"
                 >
                   <Compass className="w-4 h-4 text-indigo-600 group-hover:rotate-45 transition-transform" />
                   <span>Pelajari Fitur dengan Tour Interaktif</span>
                 </button>
-              </div>
-            )}
+              )}
+
+              {deadlineMetrics.urgentTotal > 0 && (
+                <a
+                  href="#dashboard-deadline-alerts"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-xl text-xs font-bold transition-all shadow-2xs"
+                >
+                  <Bell className="w-4 h-4 text-amber-600 animate-bounce" />
+                  <span>{deadlineMetrics.urgentTotal} Indikator Mendekati Jatuh Tempo</span>
+                  {deadlineMetrics.nearestDeadlineDays !== null && (
+                    <span className="font-mono text-[11px] bg-amber-200/60 px-1.5 py-0.2 rounded text-amber-900">
+                      {deadlineMetrics.nearestDeadlineDays <= 0 ? 'Hari Ini!' : `H-${deadlineMetrics.nearestDeadlineDays}`}
+                    </span>
+                  )}
+                </a>
+              )}
+            </div>
           </div>
 
           {/* Kartu Status Sertifikat Akreditasi di Banner */}
@@ -331,9 +363,27 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       </div>
 
+      {/* Sistem Notifikasi & Peringatan Jatuh Tempo Akreditasi BAN-PDM */}
+      <div id="dashboard-deadline-alerts">
+        <DeadlineNotificationSystem
+          komponenList={komponenList}
+          evaluasiMap={evaluasiMap}
+          onSelectIndikator={onSelectIndikator}
+        />
+      </div>
+
       {/* Kartu Ringkasan Eksekutif: Estimasi Nilai Akhir & Pembobotan Komponen BAN-PDM */}
       <div id="dashboard-executive-summary">
         <ExecutiveSummaryCard
+          komponenList={komponenList}
+          evaluasiMap={evaluasiMap}
+          onSelectKomponen={onSelectKomponen}
+        />
+      </div>
+
+      {/* Widget Interaktif: Persentase Progress Pemenuhan Dokumen per Komponen & Identifikasi Kekurangan */}
+      <div id="dashboard-document-fulfillment">
+        <DokumenProgressPerKomponenCard
           komponenList={komponenList}
           evaluasiMap={evaluasiMap}
           onSelectKomponen={onSelectKomponen}
@@ -590,6 +640,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
             const avgScore = indCount > 0 && filledCount > 0 ? (scoreSum / filledCount) : 0;
             const progress = indCount > 0 ? Math.round((filledCount / indCount) * 100) : 0;
+            const buktiPct = kTotalBukti > 0 ? Math.round((kTersediaBukti / kTotalBukti) * 100) : 0;
+            const kekuranganBukti = kTotalBukti - kTersediaBukti;
+            const kUrgent = getComponentUrgentCount(k.id, deadlineAlerts);
 
             const badgeStyles = [
               'bg-blue-50 text-[#0084FF] border-blue-200',
@@ -601,7 +654,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             return (
               <div
                 key={k.id}
-                className="p-5 rounded-xl border border-slate-200/80 bg-slate-50/40 hover:bg-white hover:shadow-sm transition-all flex flex-col justify-between"
+                className="p-5 rounded-xl border border-slate-200/80 bg-slate-50/40 hover:bg-white hover:shadow-sm transition-all flex flex-col justify-between space-y-3"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -611,7 +664,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-slate-600">
                       <span>{filledCount}/{indCount} Indikator</span>
                       <span className="text-slate-300">·</span>
-                      <span className="text-[#0084FF] font-semibold">{kTersediaBukti}/{kTotalBukti} Bukti</span>
+                      <span className="text-slate-900 font-bold">{buktiPct}% Dokumen</span>
                     </div>
                   </div>
 
@@ -621,9 +674,61 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <p className="text-xs text-slate-500 line-clamp-2">
                     {k.deskripsi}
                   </p>
+
+                  {/* Badge Peringatan Jatuh Tempo Komponen */}
+                  {kUrgent.urgentCount > 0 && (
+                    <div className={`mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs font-medium ${
+                      kUrgent.criticalCount > 0
+                        ? 'bg-rose-50 border-rose-200 text-rose-800'
+                        : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${kUrgent.criticalCount > 0 ? 'text-rose-600' : 'text-amber-600'}`} />
+                        <span className="truncate">{kUrgent.urgentCount} Indikator Mendekati Jatuh Tempo</span>
+                      </div>
+                      {kUrgent.nearestDays !== null && (
+                        <span className="font-mono font-bold text-[11px] shrink-0 ml-1">
+                          {kUrgent.nearestDays <= 0 ? 'Hari Ini!' : `H-${kUrgent.nearestDays}`}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
+                {/* Progress Pemenuhan Dokumen Mini Bar */}
+                <div className="space-y-1.5 p-2.5 rounded-xl bg-white border border-slate-200/70">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="text-slate-600 flex items-center gap-1.5">
+                      <span>Pemenuhan Dokumen Fisik:</span>
+                      <strong className="font-mono text-slate-900 font-bold">{buktiPct}%</strong>
+                    </span>
+                    {kekuranganBukti > 0 ? (
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                        {kekuranganBukti} Berkas Kurang
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Lengkap 100%
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        buktiPct >= 80 ? 'bg-emerald-500' : buktiPct >= 50 ? 'bg-amber-500' : 'bg-[#FF5722]'
+                      }`}
+                      style={{ width: `${buktiPct}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>{kTersediaBukti} dari {kTotalBukti} berkas siap</span>
+                    <span>Progres Indikator: {progress}%</span>
+                  </div>
+                </div>
+
+                <div className="mt-2 pt-3 border-t border-slate-200/60 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-slate-500">Rata-rata Skor:</span>
                     <span className="text-xs font-bold font-mono tabular-nums text-slate-800">
@@ -633,9 +738,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
                   <button
                     onClick={() => onSelectKomponen(k.id)}
-                    className="flex items-center gap-1 text-xs font-bold text-[#FF5722] hover:text-[#E64A19] transition-colors"
+                    className="flex items-center gap-1 text-xs font-bold text-[#FF5722] hover:text-[#E64A19] transition-colors cursor-pointer"
                   >
-                    <span>Buka Instrumen</span>
+                    <span>Lengkapi Dokumen</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>

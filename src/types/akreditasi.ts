@@ -1,6 +1,6 @@
 export type CapaianRubrik = 'Kurang' | 'Cukup Baik' | 'Baik' | 'Sangat Baik';
 
-export type StatusVerifikasi = 'Belum Diunggah' | 'Draf' | 'Perlu Perbaikan' | 'Terverifikasi Valid';
+export type StatusVerifikasi = 'Belum Diunggah' | 'Draf' | 'Perlu Perbaikan' | 'Terverifikasi Valid' | 'Selesai';
 
 export type StatusBuktiFisik = 'Tersedia' | 'Dalam Proses' | 'Belum Ada';
 
@@ -72,6 +72,14 @@ export interface BuktiVersion {
   timestamp: string;
 }
 
+export interface IndikatorDeadline {
+  indikator_id: string;
+  tanggal_jatuh_tempo: string; // Format YYYY-MM-DD (ISO date)
+  penanggung_jawab?: string;
+  prioritas?: 'Tinggi' | 'Sedang' | 'Normal';
+  catatan_target?: string;
+}
+
 export interface Indikator {
   id: string;
   butir_id: string;
@@ -82,6 +90,9 @@ export interface Indikator {
   penjelasan: string;
   rubrik_penilaian?: RubrikPenilaian[];
   bukti_fisik?: BuktiFisik[];
+  tanggal_jatuh_tempo?: string;
+  penanggung_jawab?: string;
+  prioritas?: 'Tinggi' | 'Sedang' | 'Normal';
 }
 
 export interface ActivityLog {
@@ -124,6 +135,55 @@ export interface EvaluasiAsesi {
 export interface ValidationResult {
   isValid: boolean;
   errors: Record<string, string>;
+}
+
+export interface EvaluasiBuktiValidationResult {
+  isValid: boolean;
+  canMarkAsSelesai: boolean;
+  errors: string[];
+  warnings: string[];
+  missingMandatoryBukti: Array<{ id: string; nama: string; kode: string }>;
+  totalBuktiWajib: number;
+  tersediaBuktiWajib: number;
+  hasValidBuktiUrl: boolean;
+  checklistCoveragePercent: number;
+  catatanValid: boolean;
+}
+
+export type ReviewerNoteCategory = 'reviu_dokumen' | 'catatan_admin' | 'diskusi_asesi' | 'tindak_lanjut' | 'umum';
+export type ReviewerNoteTarget = 'semua' | 'admin' | 'asesi' | 'validator';
+export type ReviewerNotePriority = 'tinggi' | 'sedang' | 'normal';
+export type ReviewerNoteStatus = 'terbuka' | 'proses' | 'selesai';
+
+export interface ReviewerNoteReply {
+  id: string;
+  author_id?: string;
+  author_name: string;
+  author_role: UserRole;
+  author_title?: string;
+  message: string;
+  created_at: string;
+}
+
+export interface ReviewerNote {
+  id: string;
+  komponen_id: string;
+  indikator_id?: string;
+  indikator_kode?: string;
+  target_audience: ReviewerNoteTarget;
+  category: ReviewerNoteCategory;
+  priority: ReviewerNotePriority;
+  author_id?: string;
+  author_name: string;
+  author_role: UserRole;
+  author_title?: string;
+  message: string;
+  status: ReviewerNoteStatus;
+  created_at: string;
+  updated_at?: string;
+  replies?: ReviewerNoteReply[];
+  resolved_by?: string;
+  resolved_at?: string;
 }
 
 export interface SupabaseConfig {
